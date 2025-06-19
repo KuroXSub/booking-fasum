@@ -24,12 +24,24 @@ export default function bookingForm(config) {
     },
     isCheckingAvailability: false,
 
+    validationMessages: {
+        date: null,
+        startTime: null,
+        endTime: null
+    },
+    timeFeedback: {
+        startTime: null,
+        endTime: null
+    },
+    purposeError: null,
+
     init() {
         this.minBookingDate = new Date();
         this.minBookingDate.setDate(this.minBookingDate.getDate() + 1);
         this.minBookingDate = this.minBookingDate.toISOString().split('T')[0];
 
         this.loadFlatpickrCSS();
+        this.validatePurpose();
 
         if (this.initialBooking) {
             this.$nextTick(async () => {
@@ -52,13 +64,11 @@ export default function bookingForm(config) {
     },
     
     initDatepicker() {
-        // Jika datepicker sudah diinisialisasi, buka saja
         if (this.datepickerInstance) {
             this.datepickerInstance.open();
             return;
         }
         
-        // Load Flatpickr JS jika belum dimuat
         if (typeof flatpickr === 'undefined') {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
@@ -73,17 +83,11 @@ export default function bookingForm(config) {
         this.datepickerInstance = flatpickr(this.$refs.dateInput, {
             minDate: this.minBookingDate,
             dateFormat: "Y-m-d",
-            disable: [],
             onChange: (selectedDates, dateStr) => {
                 this.bookingDate = dateStr;
                 this.generateAvailableHours();
             },
-            onOpen: () => {
-                // Set disable days setelah datepicker terbuka
-                this.updateDisabledDates();
-            },
             onDayCreate: (dObj, dStr, fp, dayElem) => {
-                // Disable dates based on facility availability
                 if (this.selectedFacility.id) {
                     const date = new Date(dayElem.dateObj);
                     const dayOfWeek = date.getDay() === 0 ? 7 : date.getDay();
@@ -97,15 +101,7 @@ export default function bookingForm(config) {
             }
         });
         
-        // Buka datepicker setelah diinisialisasi
         this.datepickerInstance.open();
-    },
-
-    updateDisabledDates() {
-        if (!this.datepickerInstance || !this.selectedFacility.id) return;
-        
-        // Update disable days berdasarkan fasilitas yang dipilih
-        this.datepickerInstance.redraw();
     },
     
     async updateFacilityDetails() {
@@ -119,54 +115,43 @@ export default function bookingForm(config) {
         
         this.bookedHours = [];
         this.specialDateInfo = null;
-
-        if (this.datepicker) {
-            this.datepicker.set('minDate', this.minBookingDate);
-            this.datepicker.clear();
-        }
     },
 
     async generateAvailableHours() {
         this.isCheckingAvailability = true;
-        this.validationMessages = { date: null, startTime: null, endTime: null }; // 
-        this.startTime = null;
-        this.endTime = null;
-        this.timeFeedback = { startTime: null, endTime: null }; // 
+        this.validationMessages = { date: null, startTime: null, endTime: null }; 
+        
+        const originalStartTime = this.startTime;
+        const originalEndTime = this.endTime;
+
+        this.timeFeedback = { startTime: null, endTime: null }; 
 
         if (!this.isDateValid()) {
             this.isCheckingAvailability = false;
-            return; // 
+            return;
         }
 
         try {
-            // Gunakan URL yang sudah kita inject dari Blade
             const url = new URL(this.availabilityUrl, window.location.origin);
-            url.searchParams.append('facility_id', this.selectedFacilityId); // 
+            url.searchParams.append('facility_id', this.selectedFacilityId);
             url.searchParams.append('date', this.bookingDate);
 
+            if (this.initialBooking?.id) {
+                url.searchParams.append('exclude_booking_id', this.initialBooking.id);
+            }
+
             const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }, // 
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 credentials: 'include'
             });
-            if (!response.ok) { // 
-                throw new Error(`HTTP error! status: ${response.status}`); // 
-            }
-            const data = await response.json(); // 
-            if (data.error) {
-                throw new Error(data.error); // 
-            }
+
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
 
             this.bookedHours = data.bookedSlots || [];
             this.operatingHours = data.operatingHours;
-            this.bookingConstraints = {
-                maxHours: data.max_booking_hours,
-                specialDate: data.specialDate
-            };
-            
-            // Update UI based on special date
+
             if (data.specialDate) {
                 if (data.specialDate.is_closed) {
                     this.validationMessages.date = `⚠️ Fasilitas tutup pada tanggal ini: ${data.specialDate.reason || 'Libur'}`;
@@ -182,18 +167,22 @@ export default function bookingForm(config) {
                 this.currentClosingTime = data.operatingHours.closing;
             }
             
-            // If facility is closed, clear time selection
             if (data.specialDate?.is_closed) {
                 this.startTime = null;
                 this.endTime = null;
+            } else {
+                 this.$nextTick(() => {
+                    this.startTime = originalStartTime;
+                    this.endTime = originalEndTime;
+                });
             }
 
         } catch (error) {
             console.error('Error:', error);
-            this.validationMessages.date = error.message || 'Gagal memeriksa ketersediaan. Silakan coba lagi.'; // 
+            this.validationMessages.date = error.message || 'Gagal memeriksa ketersediaan. Silakan coba lagi.';
             this.specialDateInfo = this.validationMessages.date;
         } finally {
-            this.isCheckingAvailability = false; // 
+            this.isCheckingAvailability = false;
         }
     },
 
@@ -325,6 +314,15 @@ export default function bookingForm(config) {
                 this.startTime = null;
             }
         },
+
+        validatePurpose() {
+            const trimmedPurpose = this.purpose.trim();
+            if (trimmedPurpose.length > 0 && trimmedPurpose.length < 10) {
+                this.purposeError = 'Tujuan peminjaman minimal 10 karakter.';
+            } else {
+                this.purposeError = null;
+            }
+        },
         
         getNextHour(time) {
             if (!time) return '';
@@ -397,7 +395,8 @@ export default function bookingForm(config) {
                 this.endTime && 
                 this.duration > 0 &&
                 this.duration <= this.selectedFacility.max_booking_hours &&
-                this.purpose && this.purpose.trim() !== '' // Cek 'purpose' dari state, bukan DOM
+                this.purpose && this.purpose.trim() !== '' &&
+                !this.purposeError
             );
         }
     };

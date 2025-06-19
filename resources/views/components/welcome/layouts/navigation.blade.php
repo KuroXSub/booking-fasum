@@ -4,7 +4,7 @@
             <!-- Logo -->
             <div class="flex items-center">
                 <a href="{{ route('home') }}" class="flex-shrink-0">
-                    <x-welcome.navigation.application-logo class="h-10 w-auto" />
+                    <x-users.application-logo class="h-10 w-auto" />
                 </a>
             </div>
 

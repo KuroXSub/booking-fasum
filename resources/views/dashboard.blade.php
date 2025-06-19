@@ -1,5 +1,5 @@
 
-<x-dashboard.layouts.app>
+<x-users.layouts.app>
     <x-slot name="header">
         <x-dashboard.sections.header 
             title="Welcome back, {{ Auth::user()->name }}!" 
@@ -47,4 +47,4 @@
                 :action="['url' => route('bookings.index'), 'text' => 'View All']" />
         </div>
     </div>
-</x-dashboard.layouts.app>
+</x-users.layouts.app>

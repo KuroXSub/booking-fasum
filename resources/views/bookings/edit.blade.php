@@ -1,11 +1,11 @@
-<x-dashboard.layouts.app>
+<x-users.layouts.app>
 
 @section('content')
 <div class="space-y-6">
     <h1 class="text-2xl font-bold">Edit Booking</h1>
     
     <div class="bg-white p-6 rounded-lg shadow">
-        <x-dashboard.bookings.form 
+        <x-bookings.form 
             :booking="$booking"
             :facilities="$facilities"
             method="PUT"
@@ -13,4 +13,4 @@
         />
     </div>
 </div>
-</x-dashboard.layouts.app>
+</x-users.layouts.app>

@@ -4,7 +4,7 @@
     <div class="p-5">
         <div class="flex items-center">
             <div class="flex-shrink-0 bg-indigo-500 rounded-md p-3">
-                <x-dynamic-component :component="'dashboard.ui.icons.' . $icon" class="h-6 w-6 text-white" />
+                <x-dynamic-component :component="'users.ui.icons.' . $icon" class="h-6 w-6 text-white" />
             </div>
             <div class="ml-5 w-0 flex-1">
                 <dt class="text-sm font-medium text-gray-500 truncate">

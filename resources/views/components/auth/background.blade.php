@@ -1,0 +1,1 @@
+<div class="fixed inset-0 bg-gradient-to-br from-indigo-100 via-white to-green-100 -z-10"></div>

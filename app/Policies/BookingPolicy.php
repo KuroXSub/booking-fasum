@@ -4,16 +4,36 @@ namespace App\Policies;
 
 use App\Models\Booking;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
 class BookingPolicy
 {
+    use HandlesAuthorization;
+
+    /**
+     * Berikan semua akses kepada admin tanpa perlu cek method lain.
+     *
+     * @param \App\Models\User $user
+     * @param string $ability
+     * @return bool|null
+     */
+    public function before(User $user, $ability)
+    {
+        // Ganti 'is_admin' dengan cara Anda mengidentifikasi admin, 
+        // misalnya $user->hasRole('admin') jika menggunakan Spatie/laravel-permission
+        if ($user->is_admin) { 
+            return true;
+        }
+    }
+
     /**
      * Determine whether the user can view any models.
      */
     public function viewAny(User $user): bool
     {
-        return false;
+        // Semua pengguna yang terautentikasi bisa melihat daftar pemesanan mereka sendiri.
+        // Admin sudah diizinkan oleh method before().
+        return true; 
     }
 
     /**
@@ -21,7 +41,8 @@ class BookingPolicy
      */
     public function view(User $user, Booking $booking): bool
     {
-        return false;
+        // Pengguna bisa melihat detail pemesanan miliknya.
+        return $user->id === $booking->user_id;
     }
 
     /**
@@ -29,7 +50,8 @@ class BookingPolicy
      */
     public function create(User $user): bool
     {
-        return false;
+        // Semua pengguna yang terautentikasi bisa membuat pemesanan.
+        return true;
     }
 
     /**
@@ -37,6 +59,7 @@ class BookingPolicy
      */
     public function update(User $user, Booking $booking): bool
     {
+        // Pengguna bisa mengupdate pemesanan miliknya.
         return $user->id === $booking->user_id;
     }
 
@@ -45,6 +68,7 @@ class BookingPolicy
      */
     public function delete(User $user, Booking $booking): bool
     {
+        // Pengguna bisa menghapus pemesanan miliknya.
         return $user->id === $booking->user_id;
     }
 
@@ -53,6 +77,7 @@ class BookingPolicy
      */
     public function restore(User $user, Booking $booking): bool
     {
+        // Secara default, hanya admin yang bisa (ditangani oleh before).
         return false;
     }
 
@@ -61,6 +86,7 @@ class BookingPolicy
      */
     public function forceDelete(User $user, Booking $booking): bool
     {
+        // Secara default, hanya admin yang bisa (ditangani oleh before).
         return false;
     }
 }

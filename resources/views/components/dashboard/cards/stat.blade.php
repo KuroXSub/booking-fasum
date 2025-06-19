@@ -4,7 +4,7 @@
     <div class="flex items-center">
         <div class="p-3 rounded-full bg-{{ $color }}-100 text-{{ $color }}-600">
             <x-dynamic-component 
-                :component="'dashboard.ui.icons.' . $icon" 
+                :component="'users.ui.icons.' . $icon" 
                 class="h-6 w-6" />
         </div>
         <div class="ml-4">

@@ -7,6 +7,7 @@ use App\Http\Requests\StoreBookingRequest;
 use App\Models\Booking;
 use App\Models\Facility;
 use App\Models\SpecialDate;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\Log;
 
 class BookingController extends Controller
 {
+    use AuthorizesRequests;
+    
     /**
      * Menampilkan daftar pemesanan milik pengguna yang sedang login.
      */
@@ -33,7 +36,6 @@ class BookingController extends Controller
      */
     public function create()
     {
-        // Hanya menampilkan fasilitas yang statusnya aktif
         $facilities = Facility::where('is_active', true)->get(); //
         return view('bookings.create', compact('facilities'));
     }
@@ -43,7 +45,6 @@ class BookingController extends Controller
      */
     public function store(StoreBookingRequest $request)
     {
-        // Validasi sekarang ditangani sepenuhnya oleh StoreBookingRequest
         Auth::user()->bookings()->create($request->validated()); //
 
         return redirect()->route('bookings.index')
@@ -55,10 +56,8 @@ class BookingController extends Controller
      */
     public function edit(Booking $booking)
     {
-        // Pastikan pengguna hanya bisa mengedit pemesanannya sendiri
         Gate::authorize('update', $booking);
 
-        // Hanya boleh edit jika status masih 'pending'
         if ($booking->status !== 'pending') {
             return redirect()->route('bookings.index')
                 ->with('error', 'Pemesanan yang sudah diproses tidak dapat diubah.');
@@ -74,10 +73,8 @@ class BookingController extends Controller
      */
     public function update(StoreBookingRequest $request, Booking $booking)
     {
-        // Pastikan pengguna hanya bisa mengupdate pemesanannya sendiri
         Gate::authorize('update', $booking);
         
-        // Hanya boleh update jika status masih 'pending'
         if ($booking->status !== 'pending') {
             return redirect()->route('bookings.index')
                 ->with('error', 'Pemesanan yang sudah diproses tidak dapat diubah.');
@@ -94,10 +91,8 @@ class BookingController extends Controller
      */
     public function destroy(Booking $booking)
     {
-        // Pastikan pengguna hanya bisa membatalkan pemesanannya sendiri
         $this->authorize('delete', $booking);
 
-        // Aturan tambahan: Hanya boleh batal jika status masih 'pending'
         if ($booking->status !== 'pending') { //
             return back()->with('error', 'Pemesanan yang sudah diproses tidak dapat dibatalkan.');
         }
@@ -111,25 +106,26 @@ class BookingController extends Controller
     {
         Log::info('Availability check request:', $request->all());
 
-        try {
-            $request->validate([
-                'facility_id' => 'required|integer|exists:facilities,id',
-                'date' => 'required|date_format:Y-m-d',
-            ]);
+        $validatedData = $request->validate([
+            'facility_id' => 'required|integer|exists:facilities,id',
+            'date' => 'required|date_format:Y-m-d',
+            'exclude_booking_id' => 'nullable|integer|exists:bookings,id'
+        ]);
 
+        try {
             $facility = Facility::findOrFail($request->query('facility_id'));
             $date = $request->query('date');
             $carbonDate = Carbon::parse($date);
             Log::info('Facility found:', [$facility]);
 
-            // Check if date is in past
+            $bookingIdToExclude = $validatedData['exclude_booking_id'] ?? null;
+
             if ($carbonDate->isPast()) {
                 return response()->json([
                     'error' => 'Tanggal tidak boleh di masa lalu'
                 ], 400);
             }
 
-            // Check facility availability for this day of week
             $dayOfWeek = $carbonDate->dayOfWeekIso;
             if (!$facility->isAvailableOnDay($dayOfWeek)) {
                 return response()->json([
@@ -137,12 +133,10 @@ class BookingController extends Controller
                 ], 400);
             }
 
-            // Check for special dates
             $specialDate = SpecialDate::where('facility_id', $facility->id)
                 ->where('date', $date)
                 ->first();
 
-            // Determine operating hours
             $openingTime = $specialDate && !$specialDate->is_closed 
                 ? Carbon::parse($specialDate->special_opening_time)
                 : Carbon::parse($facility->opening_time);
@@ -151,13 +145,25 @@ class BookingController extends Controller
                 ? Carbon::parse($specialDate->special_closing_time)
                 : Carbon::parse($facility->closing_time);
 
-            // Get all existing bookings
             $bookings = Booking::where('facility_id', $facility->id)
                 ->where('booking_date', $date)
                 ->whereIn('status', ['pending', 'approved'])
                 ->get();
 
-            // Prepare booked hours and slots
+                        $bookingsQuery = Booking::where('facility_id', $facility->id)
+                ->where('booking_date', $date)
+                ->whereIn('status', ['pending', 'approved']);
+
+            if ($request->filled('exclude_booking_id')) {
+                $bookingsQuery->where('id', '!=', $request->query('exclude_booking_id'));
+            }
+
+            if ($bookingIdToExclude) {
+                $bookingsQuery->where('id', '!=', $bookingIdToExclude);
+            }
+
+            $bookings = $bookingsQuery->get();
+
             $bookedSlots = [];
             foreach ($bookings as $booking) {
                 $start = Carbon::parse($booking->start_time);

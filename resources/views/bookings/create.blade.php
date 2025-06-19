@@ -1,4 +1,4 @@
-<x-dashboard.layouts.app>
+<x-users.layouts.app>
 
 @section('content')
     <div class="space-y-6 max-w-4xl mx-auto py-8">
@@ -11,11 +11,11 @@
         
         <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg">
             {{-- Mengirim data fasilitas sebagai prop dan atribut data HTML --}}
-            <x-dashboard.bookings.form 
+            <x-bookings.form 
                 :facilities="$facilities"
                 :action="route('bookings.store')"
             />
         </div>
     </div>
-</x-dashboard.layouts.app>
+</x-users.layouts.app>
 

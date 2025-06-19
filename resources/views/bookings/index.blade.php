@@ -1,9 +1,9 @@
 {{-- File: resources/views/bookings/index.blade.php --}}
-<x-dashboard.layouts.app>
+<x-users.layouts.app>
     <div class="space-y-6">
         <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center">
             <div class="flex items-center space-x-3">
-                <x-dashboard.ui.icons.calendar class="w-8 h-8 text-gray-500" />
+                <x-users.ui.icons.calendar class="w-8 h-8 text-gray-500" />
                 <h1 class="text-2xl font-bold text-gray-800">Pemesanan Saya</h1>
             </div>
             
@@ -13,9 +13,9 @@
         </div>
 
         {{-- Menampilkan pesan sukses atau error --}}
-        <x-dashboard.ui.alerts />
+        <x-users.ui.alerts />
 
         {{-- Memanggil komponen tabel utama --}}
-        <x-dashboard.bookings.table :bookings="$bookings" /> 
+        <x-bookings.table :bookings="$bookings" /> 
     </div>
-</x-dashboard.layouts.app>
+</x-users.layouts.app>
