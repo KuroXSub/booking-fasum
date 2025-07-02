@@ -1,9 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Meta tags -->
     <title>{{ $title ?? config('app.name') }} | Dashboard</title>
-    {{-- <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script> --}}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -23,5 +21,7 @@
         {{ $slot }}
         @stack('scripts')
     </main>
+
+    <x-welcome.layouts.footer />
 </body>
 </html>

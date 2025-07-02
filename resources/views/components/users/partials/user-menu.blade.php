@@ -1,9 +1,11 @@
-<div class="ml-3 relative" x-data="{ open: false }"> {{-- x-data="{ open: false }" is moved here --}}
+<div class="ml-3 relative" x-data="{ open: false }">
     <button @click="open = !open" class="flex items-center space-x-2">
         <span class="sr-only">Open user menu</span>
-        <img class="h-8 w-8 rounded-full" 
-             src="{{ Auth::user()->avatar_url ?? asset('images/default-avatar.png') }}" 
+
+        <img class="h-8 w-8 rounded-full object-cover bg-gray-100"
+             src="{{ Auth::user()->avatar_url ?: asset('images/default-avatar.png') }}"
              alt="{{ Auth::user()->name }}">
+
         <span class="hidden md:inline text-sm font-medium text-gray-700">
             {{ Auth::user()->name }}
         </span>
@@ -19,16 +21,15 @@
          x-transition:leave-start="transform opacity-100 scale-100"
          x-transition:leave-end="transform opacity-0 scale-95">
         <div class="py-1">
-            <a href="#" {{-- Assuming a profile edit route --}}
-               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
-                <x-users.ui.icons.user class="h-4 w-4 mr-2" /> {{-- Using your user icon --}}
+            <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                <x-users.ui.icons.user class="h-4 w-4 mr-2" />
                 Profile
             </a>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" 
+                <button type="submit"
                         class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
-                    <x-users.ui.icons.logout class="h-4 w-4 mr-2" /> {{-- Using your logout icon --}}
+                    <x-users.ui.icons.logout class="h-4 w-4 mr-2" />
                     Log Out
                 </button>
             </form>
