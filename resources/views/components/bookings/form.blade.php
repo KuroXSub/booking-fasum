@@ -58,10 +58,11 @@ if ($booking) {
             </select>
         </div>
 
-        {{-- Show next steps only if facility is selected --}}
+        {{-- Tampilkan langkah selanjutnya jika fasilitas dipilih --}}
         <template x-if="selectedFacility.id">
             <div class="space-y-8 border-t border-gray-200 pt-8">
-                {{-- Step 2: Enhanced Date Selection --}}
+
+                {{-- Step 2: Date Selection --}}
                 <div class="space-y-2">
                     <x-bookings.forms.label for="booking_date">
                         <span class="text-lg font-semibold text-gray-800">2. Pilih Tanggal</span>
@@ -72,7 +73,6 @@ if ($booking) {
                             x-ref="dateInput"
                             x-model="bookingDate"
                             @click="initDatepicker()"
-                            @change="generateAvailableHours()"
                             name="booking_date" 
                             id="booking_date"
                             required
@@ -82,51 +82,31 @@ if ($booking) {
                     </div>
                     
                     <div x-show="specialDateInfo" class="mt-2 p-3 rounded-lg" 
-                        :class="specialDate && specialDate.is_closed ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'">
+                        :class="validationMessages.date && validationMessages.date.includes('tutup') ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'">
                         <p x-html="specialDateInfo"></p>
-                        <template x-if="specialDate && !specialDate.is_closed">
-                            <p class="mt-1 font-medium">
-                                Jam operasional khusus: 
-                                <span x-text="formatTime(specialDate.special_opening_time)"></span> - 
-                                <span x-text="formatTime(specialDate.special_closing_time)"></span>
-                            </p>
-                        </template>
                     </div>
                     
                     <p class="text-sm text-gray-500" x-text="dateHelperText"></p>
-
-                    <div x-show="validationMessages.date" class="mt-2 p-2 rounded text-sm bg-red-50 text-red-700">
-                        <p x-text="validationMessages.date"></p>
-                    </div>
-
-                    <div x-show="isCheckingAvailability" x-cloak
-                        class="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
-                        <div class="bg-white p-4 rounded-lg shadow-lg">
-                            <p class="text-center">Memeriksa ketersediaan...</p>
-                            <div class="flex justify-center mt-2">
-                                <svg class="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
-                {{-- Show next steps only if valid date is selected --}}
-                <template x-if="isDateValid()">
+                {{-- Tampilkan langkah selanjutnya jika tanggal valid --}}
+                <template x-if="isDateValid() && !validationMessages.date">
                     <div class="space-y-8">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {{-- Start Time --}}
-                            <div class="space-y-2">
-                                <x-bookings.forms.label for="start_time">
-                                    <span class="text-lg font-semibold text-gray-800">3. Jam Mulai</span>
-                                    <span x-show="currentOpeningTime" class="text-sm font-normal text-gray-500">
-                                        (Buka: <span x-text="currentOpeningTime"></span>)
-                                    </span>
-                                </x-bookings.forms.label>
-                                
-                                <div class="relative">
+
+                        {{-- DIUBAH: Layout diubah dari grid 2 kolom menjadi tumpukan vertikal --}}
+                        <div class="space-y-8">
+                            
+                            {{-- BAGIAN JAM MULAI --}}
+                            <div class="space-y-4">
+                                {{-- Step 3: Start Time --}}
+                                <div class="space-y-2">
+                                    <x-bookings.forms.label for="start_time">
+                                        <span class="text-lg font-semibold text-gray-800">3. Pilih Jam Mulai</span>
+                                        <span x-show="currentOpeningTime" class="text-sm font-normal text-gray-500">
+                                            (Buka: <span x-text="currentOpeningTime"></span>)
+                                        </span>
+                                    </x-bookings.forms.label>
+                                    
                                     <input type="text"
                                         x-model="startTime"
                                         name="start_time"
@@ -134,50 +114,76 @@ if ($booking) {
                                         required
                                         readonly
                                         placeholder="Pilih slot waktu di bawah"
-                                        class="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-base shadow-sm transition duration-150 ease-in-out focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 cursor-default">
+                                        class="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-base shadow-sm cursor-default">
+                                    
+                                    <x-bookings.forms.feedback-box feedback="timeFeedback.startTime" />
                                 </div>
                                 
-                                {{-- Real-time Availability Feedback --}}
-                                <x-bookings.forms.feedback-box feedback="timeFeedback.startTime" />
-                                
-                                <x-bookings.forms.time-slot-picker />
+                                {{-- Tombol-tombol Slot Waktu --}}
+                                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                                    <template x-for="hour in availableStartHours" :key="hour.value">
+                                        <button 
+                                            type="button"
+                                            @click="selectStartTime(hour.value)"
+                                            :disabled="hour.disabled"
+                                            :class="{
+                                                'bg-indigo-600 text-white hover:bg-indigo-700 ring-2 ring-offset-2 ring-indigo-500': startTime === hour.value,
+                                                'bg-white hover:bg-gray-100 text-gray-800': startTime !== hour.value,
+                                                'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400': hour.disabled
+                                            }"
+                                            class="w-full text-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                            <span x-text="hour.label"></span>
+                                        </button>
+                                    </template>
+                                </div>
                             </div>
                             
-                            {{-- End Time --}}
-                            <div class="space-y-2">
-                                <x-bookings.forms.label for="end_time">
-                                    <span class="text-lg font-semibold text-gray-800">4. Jam Selesai</span>
-                                    <span x-show="currentClosingTime" class="text-sm font-normal text-gray-500">
-                                        (Tutup: <span x-text="currentClosingTime"></span>)
-                                    </span>
-                                </x-bookings.forms.label>
-                                
-                                <div class="relative">
-                                    <input type="time"
-                                        x-model="endTime"
-                                        @change="validateEndTime()"
-                                        name="end_time"
-                                        id="end_time"
-                                        required
-                                        :min="startTime ? getNextHour(startTime) : ''"
-                                        :max="getMaxEndTime()"
-                                        step="3600"
-                                        :disabled="!startTime"
-                                        class="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base shadow-sm transition duration-150 ease-in-out focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            {{-- BAGIAN DURASI (AKAN TAMPIL DI BAWAH JAM MULAI) --}}
+                            <div class="space-y-4" x-show="startTime" x-transition:enter.duration.300ms>
+                                {{-- Step 4: Duration Selection --}}
+                                <div class="space-y-2">
+                                    <x-bookings.forms.label>
+                                        <span class="text-lg font-semibold text-gray-800">4. Pilih Durasi</span>
+                                         <span x-show="currentClosingTime" class="text-sm font-normal text-gray-500">
+                                            (Maks. <span x-text="selectedFacility.max_booking_hours"></span> jam, Tutup: <span x-text="currentClosingTime"></span>)
+                                        </span>
+                                    </x-bookings.forms.label>
+                                    
+                                    <input type="hidden" name="end_time" :value="endTime">
+
+                                    <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                                        <template x-if="availableDurations.length > 0">
+                                            <template x-for="option in availableDurations" :key="option.duration">
+                                                <button
+                                                    type="button"
+                                                    @click="selectDuration(option.duration)"
+                                                    :class="{
+                                                        'bg-indigo-600 text-white hover:bg-indigo-700 ring-2 ring-offset-2 ring-indigo-500': selectedDuration === option.duration,
+                                                        'bg-white hover:bg-gray-100 text-gray-800': selectedDuration !== option.duration
+                                                    }"
+                                                    class="w-full text-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                                    <span x-text="option.label"></span>
+                                                </button>
+                                            </template>
+                                        </template>
+                                        <template x-if="startTime && availableDurations.length === 0">
+                                            <p class="text-sm text-gray-500 col-span-full">Tidak ada durasi yang tersedia dari jam ini.</p>
+                                        </template>
+                                    </div>
+
+                                     <div x-show="endTime" class="mt-2">
+                                        <x-bookings.forms.feedback-box feedback="timeFeedback.endTime" />
+                                    </div>
                                 </div>
-                                
-                                {{-- Real-time Duration Feedback --}}
-                                <x-bookings.forms.feedback-box feedback="timeFeedback.endTime" />
                             </div>
                         </div>
 
                         {{-- Step 5: Purpose --}}
-                        <div class="space-y-2">
+                        <div class="space-y-2 pt-4" x-show="startTime && endTime" x-transition>
                             <x-bookings.forms.label for="purpose">
                                 <span class="text-lg font-semibold text-gray-800">5. Tujuan Peminjaman</span>
                             </x-bookings.forms.label>
                             
-                            {{-- TAMBAHKAN @input.debounce.300ms="validatePurpose()" --}}
                             <x-bookings.forms.textarea 
                                 x-model="purpose" 
                                 @input.debounce.300ms="validatePurpose()"
@@ -185,9 +191,8 @@ if ($booking) {
                                 id="purpose" 
                                 rows="4" 
                                 required 
-                                placeholder="Contoh: Rapat Karang Taruna bulanan"></x-bookings.forms.textarea>
+                                placeholder="Contoh: Rapat rutin Karang Taruna RW 05."></x-bookings.forms.textarea>
 
-                            {{-- TAMBAHKAN blok untuk menampilkan pesan error --}}
                             <template x-if="purposeError">
                                 <p x-text="purposeError" class="text-sm text-red-600"></p>
                             </template>
@@ -197,13 +202,14 @@ if ($booking) {
             </div>
         </template>
         
+        {{-- Tombol Aksi --}}
         <div class="flex justify-end space-x-4 border-t border-gray-200 pt-6">
-            <a href="{{ route('bookings.index') }}" class="px-6 py-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+            <a href="{{ route('bookings.index') }}" class="px-6 py-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                 Batal
             </a>
             <button type="submit" 
                     :disabled="!isFormComplete"
-                    class="px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-800 hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    class="px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-800 hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800">
                 {{ $booking ? 'Simpan Perubahan' : 'Buat Pesanan' }}
             </button>
         </div>
