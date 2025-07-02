@@ -21,7 +21,6 @@ return new class extends Migration
             $table->text('purpose')->comment('Tujuan peminjaman');
             $table->enum('status', ['pending', 'approved', 'rejected', 'completed'])->default('pending');
             $table->text('rejection_reason')->nullable();
-            // $table->boolean('is_admin_booking')->default(false)->comment('Untuk booking multi-day');
             $table->softDeletes();
             $table->timestamps();
         });
