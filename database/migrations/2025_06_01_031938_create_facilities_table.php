@@ -21,7 +21,6 @@ return new class extends Migration
             $table->time('opening_time')->comment('Jam buka harian');
             $table->time('closing_time')->comment('Jam tutup harian');
             $table->integer('max_booking_hours')->default(1)->comment('Maksimal jam peminjaman');
-            // $table->boolean('allow_multi_day')->default(false)->comment('Hanya untuk admin');
             $table->boolean('is_active')->default(false)->comment('Status aktif fasilitas');
             $table->softDeletes();
             $table->timestamps();
