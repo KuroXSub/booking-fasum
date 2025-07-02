@@ -6,14 +6,12 @@
             <div class="shadow overflow-hidden border-b border-gray-200 sm:rounded-lg">
                 <table class="min-w-full divide-y divide-gray-200">
                     
-                    {{-- Panggil komponen header --}}
                     <x-bookings.tables.table-header />
 
                     <tbody class="bg-white divide-y divide-gray-200">
                         @forelse($bookings as $booking)
                             <x-bookings.tables.table-row :booking="$booking" />
                         @empty
-                            {{-- Panggil komponen empty state --}}
                             <x-bookings.tables.table-empty-state />
                         @endforelse
                     </tbody>

@@ -58,7 +58,7 @@
             <div @click.away="modalOpen = false" class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
                 <h3 class="text-lg font-medium text-gray-900 text-left">Konfirmasi Pembatalan</h3>
                 <p class="mt-2 text-sm text-gray-600 text-left break-words whitespace-normal">
-                    Apakah Anda yakin ingin membatalkan pemesanan untuk <strong>{{ $booking->facility->name }}</strong> pada tanggal <strong>{{ $booking->booking_date->translatedFormat('d F Y') }}</strong>?
+                    Apakah Anda yakin ingin membatalkan peminjaman untuk <strong>{{ $booking->facility->name }}</strong> pada tanggal <strong>{{ $booking->booking_date->translatedFormat('d F Y') }}</strong>?
                 </p>
                 <div class="mt-4 flex justify-end space-x-3">
                     <button @click="modalOpen = false" type="button" class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
