@@ -90,7 +90,7 @@ php artisan key:generate
   <pre><code>DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_DATABASE=db_booking_fasum
+DB_DATABASE=db-e-book-fasum
 DB_USERNAME=root
 DB_PASSWORD=
 </code></pre>
