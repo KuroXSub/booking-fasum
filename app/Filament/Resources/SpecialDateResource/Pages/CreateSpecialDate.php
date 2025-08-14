@@ -9,4 +9,9 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateSpecialDate extends CreateRecord
 {
     protected static string $resource = SpecialDateResource::class;
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }
