@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\FacilityResource\Pages;
 use App\Filament\Resources\FacilityResource\RelationManagers;
 use App\Models\Facility;
+use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -36,22 +37,22 @@ class FacilityResource extends Resource
                 Forms\Components\Section::make('Informasi Utama')
                     ->description('Detail dasar mengenai fasilitas yang akan didaftarkan.')
                     ->schema([
-                        Forms\Components\Select::make('category_id') //
+                        Forms\Components\Select::make('category_id')
                             ->relationship('category', 'name')
                             ->searchable()
                             ->preload()
                             ->required()
                             ->label('Kategori Fasilitas'),
-                        Forms\Components\TextInput::make('name') //
+                        Forms\Components\TextInput::make('name')
                             ->label('Nama Fasilitas')
                             ->required()
                             ->maxLength(255),
-                        Forms\Components\FileUpload::make('image') //
+                        Forms\Components\FileUpload::make('image')
                             ->label('Gambar Fasilitas')
                             ->image()
                             ->directory('facilities')
                             ->helperText('Unggah gambar representatif untuk fasilitas ini.'),
-                        Forms\Components\Textarea::make('description') //
+                        Forms\Components\Textarea::make('description')
                             ->label('Deskripsi')
                             ->rows(4)
                             ->columnSpanFull(),
@@ -60,44 +61,45 @@ class FacilityResource extends Resource
                 Forms\Components\Section::make('Jadwal & Ketersediaan')
                     ->description('Atur hari dan jam operasional standar untuk fasilitas ini.')
                     ->schema([
-                        Forms\Components\CheckboxList::make('available_days') //
-                            ->label('Hari Tersedia')
-                            ->options([
-                                '1' => 'Senin',
-                                '2' => 'Selasa',
-                                '3' => 'Rabu',
-                                '4' => 'Kamis',
-                                '5' => 'Jumat',
-                                '6' => 'Sabtu',
-                                '7' => 'Minggu',
-                            ])
-                            ->columns(4)
-                            ->required()
-                            ->helperText('Pilih hari-hari di mana fasilitas ini dapat dipinjam.'),
-                        Forms\Components\TimePicker::make('opening_time') //
+                        Forms\Components\Grid::make(1)->schema([
+                            Forms\Components\CheckboxList::make('available_days')
+                                ->label('Hari Tersedia')
+                                ->options([
+                                    '1' => 'Senin',
+                                    '2' => 'Selasa',
+                                    '3' => 'Rabu',
+                                    '4' => 'Kamis',
+                                    '5' => 'Jumat',
+                                    '6' => 'Sabtu',
+                                    '7' => 'Minggu',
+                                ])
+                                ->columns(7)
+                                ->required()
+                                ->helperText('Pilih hari-hari di mana fasilitas ini dapat dipinjam.'),
+                        ]),
+
+                        Forms\Components\Select::make('opening_time')
                             ->label('Jam Buka')
-                            ->seconds(false)
+                            ->options(self::generateTimeOptions())
+                            ->native(false)
                             ->live()
                             ->required(),
-                        Forms\Components\TimePicker::make('closing_time') //
+                        Forms\Components\Select::make('closing_time')
                             ->label('Jam Tutup')
-                            ->seconds(false)
-                            ->required()
+                            ->options(self::generateTimeOptions())
+                            ->native(false)
                             ->live()
-                            ->minDate(function (Forms\Get $get) {
-                                $startDate = $get('opening_time');
-                                return $startDate ? Carbon::parse($startDate) : now();
-                            })
-                            ->rules([
-                                function (Forms\Get $get) {
-                                    return function (string $attribute, $value, \Closure $fail) use ($get) {
-                                        $startDate = $get('opening_time');
-                                        if ($startDate && $value && Carbon::parse($value)->lt(Carbon::parse($startDate))) {
-                                            $fail("Waktu berakhir harus setelah waktu mulai.");
+                            ->required()
+                            ->rule(function (Forms\Get $get): Closure {
+                                return function (string $attribute, $value, Closure $fail) use ($get) {
+                                    $openingTime = $get('opening_time');
+                                    if ($openingTime && $value) {
+                                        if (Carbon::parse($value)->lte(Carbon::parse($openingTime))) {
+                                            $fail('Jam tutup harus setelah jam buka.');
                                         }
-                                    };
-                                },
-                            ]),
+                                    }
+                                };
+                            }),
                     ])->columns(2),
 
                 Forms\Components\Section::make('Aturan & Pengaturan Lanjutan')
@@ -107,14 +109,45 @@ class FacilityResource extends Resource
                             ->label('Maksimal Durasi Peminjaman (Jam)')
                             ->numeric()
                             ->required()
-                            ->minValue(1),
-                        Forms\Components\Toggle::make('is_active') //
+                            ->minValue(1)
+                            ->rule(function (Forms\Get $get): Closure {
+                                return function (string $attribute, $value, Closure $fail) use ($get) {
+                                    $openingTime = $get('opening_time');
+                                    $closingTime = $get('closing_time');
+                                    if ($openingTime && $closingTime) {
+                                        $start = Carbon::parse($openingTime);
+                                        $end = Carbon::parse($closingTime);
+                                        
+                                        if ($end->lte($start)) {
+                                            return;
+                                        }
+
+                                        $totalHours = $start->diffInHours($end, false);
+
+                                        if ($value > $totalHours) {
+                                            $fail("Durasi maksimal tidak boleh melebihi total jam operasional ({$totalHours} jam).");
+                                        }
+                                    }
+                                };
+                            }),
+                        Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->inline(false)
                             ->helperText('Jika nonaktif, fasilitas tidak akan muncul di halaman peminjaman user.')
-                            ->default(false),
+                            ->default(true),
                     ])->columns(2),
             ]);
+    }
+
+    protected static function generateTimeOptions(): array
+    {
+        $options = [];
+        $time = Carbon::now()->startOfDay();
+        for ($i = 0; $i < 24; $i++) {
+            $options[$time->format('H:i:s')] = $time->format('H:00');
+            $time->addHour();
+        }
+        return $options;
     }
 
     public static function table(Table $table): Table

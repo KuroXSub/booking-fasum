@@ -10,6 +10,7 @@ use App\Models\SpecialDate;
 use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -37,15 +38,14 @@ class BookingResource extends Resource
                     ->description('Pilih pengguna, fasilitas, dan jadwal yang diinginkan.')
                     ->schema([
                         Forms\Components\Select::make('user_id')
-                            ->relationship('user', 'name', fn (Builder $query) => $query->where('role', 'masyarakat')) // [cite: 1]
+                            ->relationship('user', 'name', fn (Builder $query) => $query->where('role', 'masyarakat'))
                             ->searchable()
                             ->preload()
                             ->required()
                             ->label('Nama Pemesan'),
 
                         Forms\Components\Select::make('facility_id')
-                            // BARU: Hanya menampilkan fasilitas yang aktif
-                            ->relationship('facility', 'name', fn (Builder $query) => $query->where('is_active', true)) // [cite: 5]
+                            ->relationship('facility', 'name', fn (Builder $query) => $query->where('is_active', true))
                             ->searchable()
                             ->preload()
                             ->live()
@@ -55,140 +55,181 @@ class BookingResource extends Resource
                         Forms\Components\DatePicker::make('booking_date')
                             ->label('Tanggal Pemesanan')
                             ->native(false)
-                            ->live()
                             ->required()
-                            ->minDate(now()->addDay()) // <-- BARU: Tanggal minimal adalah besok
+                            ->live(onBlur: true)
+                            ->minDate(now()->addDay())
                             ->helperText('Pemesanan hanya dapat dilakukan paling cepat untuk H-1 (besok).')
-                            ->rule(function (\Filament\Forms\Get $get): Closure {
+                            
+                            ->disabled(fn (Forms\Get $get): bool => !$get('facility_id'))
+                            ->placeholder('Pilih fasilitas terlebih dahulu')
+
+                            ->disabledDates(function (Forms\Get $get) {
+                                $facilityId = $get('facility_id');
+                                if (!$facilityId) {
+                                    return array_map(fn ($i) => now()->addDays($i)->format('Y-m-d'), range(1, 365));
+                                }
+
+                                return cache()->remember("booking_disabled_dates_{$facilityId}", now()->addHour(), function () use ($facilityId) {
+                                    /** @var \App\Models\Facility|null $facility */
+                                    $facility = Facility::find($facilityId);
+                                    $availableDays = $facility->available_days ?? [];
+
+                                    $disabled = [];
+                                    $startDate = now()->addDay();
+                                    $endDate = now()->addYear();
+
+                                    for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
+                                        if (!in_array($date->dayOfWeekIso, $availableDays)) {
+                                            $disabled[] = $date->format('Y-m-d');
+                                        }
+                                    }
+                                    return $disabled;
+                                });
+                            })
+
+                            ->rule(function (Forms\Get $get): Closure {
                                 return function (string $attribute, $value, Closure $fail) use ($get) {
                                     $facilityId = $get('facility_id');
-                                    if (!$facilityId) return;
+                                    if (!$facilityId || !$value) return;
 
-                                    /** @var Facility $facility */
+                                    /** @var \App\Models\Facility $facility */
                                     $facility = Facility::find($facilityId);
                                     $date = Carbon::parse($value);
 
                                     $specialDate = SpecialDate::where('facility_id', $facilityId)->where('date', $date->format('Y-m-d'))->first();
                                     if ($specialDate && $specialDate->is_closed) {
-                                        $fail('Fasilitas tutup pada tanggal yang dipilih. Alasan: ' . ($specialDate->reason ?? 'Hari Libur'));
+                                        $fail('Fasilitas tutup pada tanggal yang dipilih karena ada Jadwal Khusus. Alasan: ' . ($specialDate->reason ?? 'Hari Libur'));
                                         return;
                                     }
-
+                                    
                                     if (!$specialDate && !$facility->isAvailableOnDay($date->dayOfWeekIso)) {
                                         $fail('Fasilitas tidak tersedia pada hari yang dipilih.');
                                     }
                                 };
                             }),
 
-                        Forms\Components\TimePicker::make('start_time')
+                        Forms\Components\Select::make('start_time')
                             ->label('Jam Mulai')
-                            ->seconds(false)
-                            ->minutesStep(60)
-                            ->displayFormat('H:00')
                             ->live()
                             ->required()
-                            // ->minDate(...) DIHAPUS dan diganti dengan rule di bawah
-                            ->maxDate(function (\Filament\Forms\Get $get) {
-                                $facility = Facility::find($get('facility_id'));
-                                $specialDate = SpecialDate::where('facility_id', $get('facility_id'))->where('date', $get('booking_date'))->first();
-                                return $specialDate?->special_closing_time ?? $facility?->closing_time;
-                            })
-                            ->rules([ // <-- BARU: Menambahkan rule untuk pesan error kustom
-                                function (\Filament\Forms\Get $get): Closure {
-                                    return function (string $attribute, $value, Closure $fail) use ($get) {
-                                        $facilityId = $get('facility_id');
-                                        $bookingDate = $get('booking_date');
-                                        if (!$facilityId || !$bookingDate || !$value) return;
-
-                                        $facility = Facility::find($facilityId);
-                                        $specialDate = SpecialDate::where('facility_id', $facilityId)->where('date', $bookingDate)->first();
-                                        $openingTime = $specialDate?->special_opening_time ?? $facility?->opening_time;
-
-                                        if (!$openingTime) return;
-
-                                        if (Carbon::parse($value)->isBefore(Carbon::parse($openingTime))) {
-                                            $fail("Jam mulai tidak boleh lebih awal dari jam buka fasilitas (" . Carbon::parse($openingTime)->format('H:i') . ").");
-                                        }
-                                    };
+                            ->native(false)
+                            ->placeholder('Pilih jam mulai')
+                            ->helperText('Jam hanya bisa dipilih setelah memilih tanggal')
+                            ->options(function (Forms\Get $get) {
+                                $facilityId = $get('facility_id');
+                                $bookingDate = $get('booking_date');
+                                if (!$facilityId || !$bookingDate) {
+                                    return [];
                                 }
-                            ]),
 
-                        Forms\Components\TimePicker::make('end_time')
-                            ->label('Jam Selesai')
-                            ->seconds(false)
-                            ->minutesStep(60)
-                            ->displayFormat('H:00')
+                                $facility = Facility::find($facilityId);
+                                $specialDate = SpecialDate::where('facility_id', $facilityId)->where('date', $bookingDate)->first();
+                                
+                                $openingTime = Carbon::parse($specialDate?->special_opening_time ?? $facility->opening_time);
+                                $closingTime = Carbon::parse($specialDate?->special_closing_time ?? $facility->closing_time)->subHour();
+
+                                $options = [];
+                                for ($time = $openingTime; $time->lte($closingTime); $time->addHour()) {
+                                    $options[$time->format('H:i:s')] = $time->format('H:00');
+                                }
+                                return $options;
+                            }),
+
+                        Forms\Components\Select::make('duration_in_hours')
+                            ->label('Durasi Pemesanan')
                             ->required()
-                            ->minDate(fn (\Filament\Forms\Get $get) => $get('start_time'))
-                            // Gabungkan semua rules dalam satu array
-                            ->rules([
-                                // Rule 1: Validasi agar tidak bentrok
-                                function (\Filament\Forms\Get $get, $record): Closure {
-                                    return function (string $attribute, $value, Closure $fail) use ($get, $record) {
-                                        $startTime = $get('start_time');
-                                        if (!$startTime || !$value) return;
+                            ->live()
+                            ->native(false)
+                            ->placeholder('Pilih durasi')
+                            ->helperText('Durasi hanya bisa dipilih setelah memilih jam mulai')
+                            ->options(function (Forms\Get $get) {
+                                $facilityId = $get('facility_id');
+                                $bookingDate = $get('booking_date');
+                                $startTimeStr = $get('start_time');
 
-                                        $query = Booking::where('facility_id', $get('facility_id'))
-                                            ->where('booking_date', $get('booking_date'))
-                                            ->whereIn('status', ['approved', 'pending'])
-                                            ->where(fn(Builder $q) => $q->where('start_time', '<', $value)->where('end_time', '>', $startTime));
-
-                                        if ($record) $query->where('id', '!=', $record->id);
-                                        if ($query->exists()) $fail('Jadwal pada jam ini sudah dipesan atau sedang menunggu persetujuan.');
-                                    };
-                                },
-                                // Rule 2: Validasi durasi maksimal dan jam tutup (PENGGANTI maxDate)
-                                function (\Filament\Forms\Get $get): Closure {
-                                    return function (string $attribute, $value, Closure $fail) use ($get) {
-                                        $facility = Facility::find($get('facility_id'));
-                                        $startTimeValue = $get('start_time');
-                                        if (!$facility || !$startTimeValue || !$value) return;
-
-                                        // Hitung batas waktu sebenarnya
-                                        $startTime = Carbon::parse($startTimeValue);
-                                        $maxBookingTime = $startTime->copy()->addHours($facility->max_booking_hours); // [cite: 5]
-
-                                        $specialDate = SpecialDate::where('facility_id', $facility->id)->where('date', $get('booking_date'))->first(); // [cite: 6]
-                                        $closingTime = Carbon::parse($specialDate?->special_closing_time ?? $facility->closing_time); // [cite: 5, 6]
-
-                                        $effectiveMaxTime = $maxBookingTime->lessThan($closingTime) ? $maxBookingTime : $closingTime;
-                                        $userEndTime = Carbon::parse($value);
-
-                                        if ($userEndTime->isAfter($effectiveMaxTime)) {
-                                            // Cek alasan kenapa GAGAL dan berikan pesan yang sesuai
-                                            if ($effectiveMaxTime->equalTo($maxBookingTime)) {
-                                                // Gagal karena melebihi durasi
-                                                $fail("Durasi pemesanan tidak boleh melebihi batas maksimal {$facility->max_booking_hours} jam."); // [cite: 5]
-                                            } else {
-                                                // Gagal karena melewati jam tutup
-                                                $fail("Jam selesai tidak boleh melebihi jam tutup fasilitas ({$closingTime->format('H:i')})."); // [cite: 5]
-                                            }
-                                        }
-                                    };
+                                if (!$facilityId || !$bookingDate || !$startTimeStr) {
+                                    return [];
                                 }
-                            ]),
+
+                                /** @var Facility $facility */
+                                $facility = Facility::find($facilityId);
+                                $specialDate = SpecialDate::where('facility_id', $facilityId)->where('date', $bookingDate)->first();
+                                
+                                $startTime = Carbon::parse($startTimeStr);
+                                $closingTime = Carbon::parse($specialDate?->special_closing_time ?? $facility->closing_time);
+                                $maxHours = $facility->max_booking_hours;
+
+                                $options = [];
+                                for ($hour = 1; $hour <= $maxHours; $hour++) {
+                                    $endTime = $startTime->copy()->addHours($hour);
+                                    if ($endTime->isAfter($closingTime)) {
+                                        break; 
+                                    }
+                                    $options[$hour] = "$hour jam";
+                                }
+
+                                return $options;
+                            })
+                            ->afterStateUpdated(function (Set $set, Forms\Get $get, $state) {
+                                $startTimeStr = $get('start_time');
+                                if ($startTimeStr && $state) {
+                                    $endTime = Carbon::parse($startTimeStr)->addHours((int)$state)->format('H:i:s'); 
+                                    $set('end_time', $endTime);
+                                }
+                            })
+                            ->rule(function (Forms\Get $get, $record): Closure {
+                                return function (string $attribute, $value, Closure $fail) use ($get, $record) {
+                                    $startTime = $get('start_time');
+                                    $endTime = $startTime ? Carbon::parse($startTime)->addHours((int)$value)->format('H:i:s') : null;
+
+                                    if (!$startTime || !$endTime) return;
+
+                                    $query = Booking::where('facility_id', $get('facility_id'))
+                                        ->where('booking_date', $get('booking_date'))
+                                        ->whereIn('status', ['approved', 'pending'])
+                                        ->where(fn(Builder $q) => $q->where('start_time', '<', $endTime)->where('end_time', '>', $startTime));
+
+                                    if ($record) {
+                                        $query->where('id', '!=', $record->id);
+                                    }
+                                    
+                                    if ($query->exists()) {
+                                        $fail('Jadwal pada rentang waktu ini sudah dipesan atau sedang menunggu persetujuan.');
+                                    }
+                                };
+                            }),
+                        
+                        Forms\Components\Hidden::make('end_time')->required(),
+
                     ])->columns(2),
 
                 Forms\Components\Section::make('Informasi Tambahan')
                     ->schema([
-                         Forms\Components\Textarea::make('purpose') // [cite: 8]
+                        Forms\Components\Textarea::make('purpose')
                             ->label('Tujuan Peminjaman')
                             ->required()
-                            ->columnSpanFull(),
-                        Forms\Components\Select::make('status') // [cite: 9]
-                             ->options([
-                                 'pending' => 'Pending',
-                                 'approved' => 'Approved',
-                                 'rejected' => 'Rejected',
-                                 'completed' => 'Completed',
-                             ])
+                            ->columnSpanFull()
+                            ->minLength(10)
+                            ->maxLength(255)
+                            ->validationMessages([
+                                'minLength' => 'Silakan perpanjang teks ini menjadi :min karakter atau lebih (Anda saat ini menggunakan :value karakter).',
+                                'maxLength' => 'Teks melebihi batas maksimal :max karakter.',
+                                'required' => 'Kolom ini wajib diisi.',
+                            ]),
+                        Forms\Components\Select::make('status')
+                            ->options([
+                                'pending' => 'Pending',
+                                'approved' => 'Approved',
+                                'rejected' => 'Rejected',
+                                'completed' => 'Completed',
+                            ])
                             ->default('pending')
                             ->live()
                             ->required(),
-                        Forms\Components\Textarea::make('rejection_reason') // [cite: 9]
-                             ->label('Alasan Penolakan')
-                             ->helperText('Isi jika status pemesanan ditolak.')
-                             ->visible(fn (\Filament\Forms\Get $get): bool => $get('status') === 'rejected'),
+                        Forms\Components\Textarea::make('rejection_reason')
+                            ->label('Alasan Penolakan')
+                            ->helperText('Isi jika status pemesanan ditolak.')
+                            ->visible(fn (Forms\Get $get): bool => $get('status') === 'rejected'),
                     ])->columns(2),
             ]);
     }
@@ -202,7 +243,7 @@ class BookingResource extends Resource
                 Tables\Columns\TextColumn::make('booking_date')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('start_time')->time('H:i'),
                 Tables\Columns\TextColumn::make('end_time')->time('H:i'),
-                Tables\Columns\SelectColumn::make('status') // 
+                Tables\Columns\SelectColumn::make('status')
                     ->options([
                         'pending' => 'Pending',
                         'approved' => 'Approved',

@@ -10,11 +10,13 @@ use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Carbon;
 
 class SpecialDateResource extends Resource
 {
@@ -35,70 +37,122 @@ class SpecialDateResource extends Resource
                 Forms\Components\Section::make('Pengaturan Jadwal Khusus')
                     ->description('Tentukan tanggal libur, maintenance, atau hari dengan jam operasional khusus.')
                     ->schema([
-                        Forms\Components\Select::make('facility_id') // 
+                        Forms\Components\Select::make('facility_id')
                             ->relationship('facility', 'name')
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->reactive()
+                            ->live()
                             ->label('Pilih Fasilitas'),
 
-                        Forms\Components\DatePicker::make('date') // 
+                        Forms\Components\DatePicker::make('date')
                             ->label('Tanggal Khusus')
                             ->required()
                             ->native(false)
                             ->displayFormat('d F Y')
-                            ->rules([
-                                fn (Get $get): Closure => 
-                                    function (string $attribute, $value, Closure $fail) use ($get) {
-                                        $facilityId = $get('facility_id');
-                                        if (!$facilityId) {
-                                            return;
-                                        }
+                            ->minDate(now()->addDay())
 
-                                        /** @var Facility|null $facility */
-                                        $facility = Facility::find($facilityId);
-                                        if (!$facility || !$facility->available_days) {
-                                            return;
-                                        }
-                                        
-                                        $selectedDayOfWeek = date('N', strtotime($value));
+                            ->disabled(fn (Get $get): bool => !$get('facility_id'))
+                            
+                            ->placeholder('Pilih fasilitas terlebih dahulu')
 
-                                        if (!in_array($selectedDayOfWeek, $facility->available_days)) {
-                                            $fail('Tanggal yang dipilih tidak sesuai dengan hari operasional fasilitas.');
-                                        }
-                                    },
-                            ]),
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set) {
+                                $set('special_opening_time', null);
+                                $set('special_closing_time', null);
+                            })
+                            ->disabledDates(function (Get $get) {
+                                $facilityId = $get('facility_id');
+                                if (!$facilityId) {
+                                    return [];
+                                }
 
-                        Forms\Components\Textarea::make('reason') // 
+                                return cache()->remember("disabled_dates_{$facilityId}", now()->addHour(), function () use ($facilityId) {
+                                    /** @var \App\Models\Facility|null $facility */
+                                    $facility = Facility::find($facilityId);
+                                    $availableDays = $facility->available_days ?? [];
+
+                                    $disabled = [];
+                                    $startDate = now()->addDay();
+                                    $endDate = now()->addYear();
+
+                                    for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
+                                        if (!in_array($date->dayOfWeekIso, $availableDays)) {
+                                            $disabled[] = $date->format('Y-m-d');
+                                        }
+                                    }
+                                    return $disabled;
+                                });
+                            }),
+
+                        Forms\Components\Textarea::make('reason')
                             ->label('Alasan/Keterangan')
                             ->helperText('Contoh: Libur Nasional, Perbaikan, Acara Internal.')
                             ->rows(3)
                             ->columnSpanFull(),
 
-                        Forms\Components\Toggle::make('is_closed') // 
+                        Forms\Components\Toggle::make('is_closed')
                             ->label('Tutup Fasilitas Pada Tanggal Ini')
                             ->helperText('Jika diaktifkan, fasilitas tidak dapat dibooking sama sekali pada tanggal ini.')
-                            ->reactive() // Membuat form interaktif
+                            ->live()
                             ->columnSpanFull(),
 
-                        // Field jam khusus ini hanya akan muncul jika 'is_closed' TIDAK aktif
-                        Forms\Components\TimePicker::make('special_opening_time') // 
+                        Forms\Components\Select::make('special_opening_time')
                             ->label('Jam Buka Khusus')
-                            ->seconds(false)
-                            ->displayFormat('H:i')
-                            ->hidden(fn (Get $get): bool => $get('is_closed')) // Sembunyikan jika is_closed = true
+                            ->options(self::generateTimeOptions())
+                            ->native(false)
+                            ->live()
+                            ->hidden(fn (Get $get): bool => $get('is_closed'))
+                            ->required(fn (Get $get): bool => !$get('is_closed'))
                             ->helperText('Atur jika ada jam buka yang berbeda dari biasanya.'),
 
-                        Forms\Components\TimePicker::make('special_closing_time') // [cite: 6]
+                        Forms\Components\Select::make('special_closing_time')
                             ->label('Jam Tutup Khusus')
-                            ->seconds(false)
-                            ->displayFormat('H:i')
-                            ->hidden(fn (Get $get): bool => $get('is_closed')) // Sembunyikan jika is_closed = true
-                            ->helperText('Atur jika ada jam tutup yang berbeda dari biasanya.'),
+                            ->options(self::generateTimeOptions())
+                            ->native(false)
+                            ->hidden(fn (Get $get): bool => $get('is_closed'))
+                            ->required(fn (Get $get): bool => !$get('is_closed'))
+                            ->helperText('Atur jika ada jam tutup yang berbeda dari biasanya.')
+                            // --- VALIDASI BARU ---
+                            ->rule(function (Get $get): Closure {
+                                return function (string $attribute, $value, Closure $fail) use ($get) {
+                                    $facilityId = $get('facility_id');
+                                    $openingTime = $get('special_opening_time');
+
+                                    if (!$facilityId || !$openingTime || !$value) return;
+
+                                    $start = Carbon::parse($openingTime);
+                                    $end = Carbon::parse($value);
+
+                                    if ($end->lte($start)) {
+                                        $fail('Jam tutup khusus harus setelah jam buka khusus.');
+                                        return;
+                                    }
+
+                                    /** @var Facility $facility */
+                                    $facility = Facility::find($facilityId);
+                                    $minDuration = $facility->max_booking_hours;
+                                    $actualDuration = $start->diffInHours($end);
+
+                                    if ($actualDuration < $minDuration) {
+                                        $fail("Total jam operasional khusus ({$actualDuration} jam) harus lebih besar atau sama dengan durasi pinjam maksimal fasilitas ({$minDuration} jam).");
+                                    }
+                                };
+                            }),
 
                     ])->columns(2),
             ]);
+    }
+
+    protected static function generateTimeOptions(): array
+    {
+        $options = [];
+        $time = Carbon::now()->startOfDay();
+        for ($i = 0; $i < 24; $i++) {
+            $options[$time->format('H:i:s')] = $time->format('H:00');
+            $time->addHour();
+        }
+        return $options;
     }
 
     public static function table(Table $table): Table
